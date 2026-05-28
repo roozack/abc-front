@@ -33,7 +33,7 @@ function App() {
   const [shifts, setShifts] = useState([])
   const [loading, setLoading] = useState(false)
   
-  // 十字キーと数字入力を連動させるための選択マスインデックス
+  // クリック選択と十字キー移動のためのインデックス
   const [focusedStaffIndex, setFocusedStaffIndex] = useState(null)
   const [focusedDayIndex, setFocusedDayIndex] = useState(null)
 
@@ -44,7 +44,7 @@ function App() {
   const otherStaffs = staffs.filter(s => s.name !== '栗原');
   const allStaffs = kurihara ? [kurihara, ...otherStaffs] : otherStaffs;
 
-  // 十字キー移動 ＆ 数字入力の同時監視ロジック
+  // 💡 十字キー移動 ＆ 数字入力の同時監視ロジック
   useEffect(() => {
     const handleKeyDown = async (e) => {
       if (focusedStaffIndex === null || focusedDayIndex === null || loading || allStaffs.length === 0) return;
@@ -71,7 +71,7 @@ function App() {
         return;
       }
 
-      // 2. 数字キーの割り当て
+      // 2. 凡例に合わせた正確な数字キーの割り当て
       let newValue = null;
       if (e.key === '1') newValue = "朝";
       else if (e.key === '2') newValue = "①";
@@ -86,7 +86,7 @@ function App() {
         const targetStaff = allStaffs[focusedStaffIndex];
         const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
-        // どんな状態（データ無しのマス）からでも直接上書きクリーン保存を走らせる
+        // どんな状態のマスからでも直接上書きクリーン保存を走らせる
         await updateShiftData(targetStaff.id, dayStr, newValue);
       }
     };
@@ -130,7 +130,7 @@ function App() {
     setLoading(false)
   }
 
-  // セルクリック時に青枠（フォーカス）を固定し、次のシフトへサイクル
+  // セルクリック時に青枠（フォーカス）を完全に固定し、次のシフト記号へサイクル
   function handleCellClick(staffIndex, dayIndex, staffId, dateStr, currentType) {
     if (loading) return
     setFocusedStaffIndex(staffIndex);
@@ -141,7 +141,7 @@ function App() {
     updateShiftData(staffId, dateStr, nextType);
   }
 
-  // 集計ロジック（重複を完全に排除し、画面に見えている有効な1件だけをカウント）
+  // 集計ロジック（重複を完全に排除し、画面に見えている有効な1件だけを確実にカウント）
   const getCoverage = (dayIndex) => {
     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
     const prevDayStr = dayIndex === 0 ? '2026-05-31' : `2026-06-${String(dayIndex).padStart(2, '0')}`;
@@ -224,27 +224,29 @@ function App() {
                   <td style={{ textAlign: 'center' }}>{s.name === '栗原' ? 'B' : 'C'}</td>
                   <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{s.name} {s.can_kitchen && '🍳'}</td>
                   
+                  {/* 💡 毎マス確実に正しい日付のみを描画するループ処理 */}
                   {[...Array(30)].map((_, dayIndex) => {
                     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
-                    const shift = currentStaffShifts.find(s => s.date === dayStr) || { id: `empty-${s.id}-${dayIndex}`, shift_type: "" };
+                    const shift = currentStaffShifts.find(s => s.date === dayStr);
                     const isFocused = focusedStaffIndex === staffIndex && focusedDayIndex === dayIndex;
+                    const displayType = shift ? shift.shift_type : "";
                     
                     return (
                       <td 
                         key={`${s.id}-${dayIndex}`}
                         onClick={() => {
-                          handleCellClick(staffIndex, dayIndex, s.id, dayStr, shift.shift_type);
+                          handleCellClick(staffIndex, dayIndex, s.id, dayStr, displayType);
                         }}
                         style={{ 
                           padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
-                          backgroundColor: SHIFT_INFO[shift.shift_type || ""].color,
-                          fontWeight: shift.shift_type ? 'bold' : 'normal',
+                          backgroundColor: SHIFT_INFO[displayType || ""].color,
+                          fontWeight: displayType ? 'bold' : 'normal',
                           outline: isFocused ? '2px solid #2196F3' : 'none',
                           zIndex: isFocused ? 10 : 1,
                           position: 'relative'
                         }}
                       >
-                        {shift.shift_type || "-"}
+                        {displayType || "-"}
                       </td>
                     )
                   })}
