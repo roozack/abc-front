@@ -83,11 +83,10 @@ function App() {
 
       if (newValue !== null) {
         e.preventDefault();
-        
         const targetStaff = allStaffs[focusedStaffIndex];
         const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
-        // 💡 staff_id と date を直接指定して一括更新（重複データをまとめて上書き・浄化）
+        // どんな状態（データ無しのマス）からでも直接上書きクリーン保存を走らせる
         await updateShiftData(targetStaff.id, dayStr, newValue);
       }
     };
@@ -109,20 +108,29 @@ function App() {
     setShifts(mData || [])
   }
 
-  // 💡 修正：スタッフIDと日付を条件に一括アップデートをかけ、重複バグを根本治療する
+  // 💡【超重要】古い重複データを一回「全削除」してから「1件だけピカピカにインサート」する鉄壁ロジック
   async function updateShiftData(staffId, dateStr, newValue) {
     setLoading(true)
-    const { error } = await supabase
+    
+    // まずその日・その人のデータを（重複があっても）全部まとめて一回削除！
+    await supabase
       .from('monthly_shifts')
-      .update({ shift_type: newValue })
+      .delete()
       .eq('staff_id', staffId)
       .eq('date', dateStr)
       
-    if (!error) await fetchData()
+    // 値が空（消去）じゃない場合のみ、新しく1件だけを綺麗に登録する
+    if (newValue !== "") {
+      await supabase
+        .from('monthly_shifts')
+        .insert({ staff_id: staffId, date: dateStr, shift_type: newValue })
+    }
+      
+    await fetchData()
     setLoading(false)
   }
 
-  // 💡 修正：セルクリック時に青枠（フォーカス）をその位置に完全に固定する
+  // セルクリック時に青枠（フォーカス）を固定し、次のシフトへサイクル
   function handleCellClick(staffIndex, dayIndex, staffId, dateStr, currentType) {
     if (loading) return
     setFocusedStaffIndex(staffIndex);
@@ -133,7 +141,7 @@ function App() {
     updateShiftData(staffId, dateStr, nextType);
   }
 
-  // 集計ロジック（重複を排除し、有効な1件だけを確実にカウント）
+  // 集計ロジック（重複を完全に排除し、画面に見えている有効な1件だけをカウント）
   const getCoverage = (dayIndex) => {
     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
     const prevDayStr = dayIndex === 0 ? '2026-05-31' : `2026-06-${String(dayIndex).padStart(2, '0')}`;
@@ -218,7 +226,7 @@ function App() {
                   
                   {[...Array(30)].map((_, dayIndex) => {
                     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
-                    const shift = currentStaffShifts.find(s => s.date === dayStr) || { id: `empty-${dayIndex}`, shift_type: "" };
+                    const shift = currentStaffShifts.find(s => s.date === dayStr) || { id: `empty-${s.id}-${dayIndex}`, shift_type: "" };
                     const isFocused = focusedStaffIndex === staffIndex && focusedDayIndex === dayIndex;
                     
                     return (
