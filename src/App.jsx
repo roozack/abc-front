@@ -40,11 +40,11 @@ function App() {
   useEffect(() => { fetchData() }, [])
 
   // スタッフの配列を整理（星グループとして一本化）
-  const kurihara = staffs.find(s => s.name === '栗原');
-  const otherStaffs = staffs.filter(s => s.name !== '栗原');
+  const kurihara = staffs.find(staff => staff.name === '栗原');
+  const otherStaffs = staffs.filter(staff => staff.name !== '栗原');
   const allStaffs = kurihara ? [kurihara, ...otherStaffs] : otherStaffs;
 
-  // 💡 十字キー移動 ＆ 数字入力の同時監視ロジック
+  // 十字キー移動 ＆ 数字入力の同時監視ロジック
   useEffect(() => {
     const handleKeyDown = async (e) => {
       if (focusedStaffIndex === null || focusedDayIndex === null || loading || allStaffs.length === 0) return;
@@ -86,7 +86,6 @@ function App() {
         const targetStaff = allStaffs[focusedStaffIndex];
         const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
-        // どんな状態のマスからでも直接上書きクリーン保存を走らせる
         await updateShiftData(targetStaff.id, dayStr, newValue);
       }
     };
@@ -108,18 +107,16 @@ function App() {
     setShifts(mData || [])
   }
 
-  // 💡【超重要】古い重複データを一回「全削除」してから「1件だけピカピカにインサート」する鉄壁ロジック
+  // 古い重複データを一回「全削除」してから「1件だけピカピカにインサート」する鉄壁ロジック
   async function updateShiftData(staffId, dateStr, newValue) {
     setLoading(true)
     
-    // まずその日・その人のデータを（重複があっても）全部まとめて一回削除！
     await supabase
       .from('monthly_shifts')
       .delete()
       .eq('staff_id', staffId)
       .eq('date', dateStr)
       
-    // 値が空（消去）じゃない場合のみ、新しく1件だけを綺麗に登録する
     if (newValue !== "") {
       await supabase
         .from('monthly_shifts')
@@ -147,25 +144,25 @@ function App() {
     const prevDayStr = dayIndex === 0 ? '2026-05-31' : `2026-06-${String(dayIndex).padStart(2, '0')}`;
     
     const todayValidShifts = allStaffs.map(staff => {
-      const staffShifts = shifts.filter(s => s.staff_id === staff.id);
-      return staffShifts.find(s => s.date === dayStr);
+      const staffShifts = shifts.filter(sh => sh.staff_id === staff.id);
+      return staffShifts.find(sh => sh.date === dayStr);
     }).filter(Boolean);
 
     const prevValidShifts = allStaffs.map(staff => {
-      const staffShifts = shifts.filter(s => s.staff_id === staff.id);
-      return staffShifts.find(s => s.date === prevDayStr);
+      const staffShifts = shifts.filter(sh => sh.staff_id === staff.id);
+      return staffShifts.find(sh => sh.date === prevDayStr);
     }).filter(Boolean);
 
     const workingStaffIds = todayValidShifts
-      .filter(s => ["朝", "①", "②", "③"].includes(s.shift_type))
-      .map(s => s.staff_id);
+      .filter(sh => ["朝", "①", "②", "③"].includes(sh.shift_type))
+      .map(sh => sh.staff_id);
 
     return {
-      t7_9: todayValidShifts.filter(s => ["朝", "①"].includes(s.shift_type)).length + 
-            prevValidShifts.filter(s => s.shift_type === "夜勤").length,
-      t10_16: todayValidShifts.filter(s => ["①", "②", "③"].includes(s.shift_type)).length,
-      t17_18: todayValidShifts.filter(s => ["②", "③", "夕", "夜勤"].includes(s.shift_type)).length,
-      kitchenOk: allStaffs.some(s => s.can_kitchen && workingStaffIds.includes(s.id))
+      t7_9: todayValidShifts.filter(sh => ["朝", "①"].includes(sh.shift_type)).length + 
+            prevValidShifts.filter(sh => sh.shift_type === "夜勤").length,
+      t10_16: todayValidShifts.filter(sh => ["①", "②", "③"].includes(sh.shift_type)).length,
+      t17_18: todayValidShifts.filter(sh => ["②", "③", "夕", "夜勤"].includes(sh.shift_type)).length,
+      kitchenOk: allStaffs.some(staff => staff.can_kitchen && workingStaffIds.includes(staff.id))
     };
   };
 
@@ -212,30 +209,29 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {allStaffs.map((s, staffIndex) => {
-              const currentStaffShifts = shifts.filter(shift => shift.staff_id === s.id && shift.date.includes('-06-'));
+            {allStaffs.map((staff, staffIndex) => {
+              const currentStaffShifts = shifts.filter(shift => shift.staff_id === staff.id && shift.date.includes('-06-'));
               
               return (
-                <tr key={s.id}>
+                <tr key={staff.id}>
                   {staffIndex === 0 && (
                     <td rowSpan={allStaffs.length + 4} style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '3px solid #333' }}>（星）</td>
                   )}
-                  <td style={{ textAlign: 'center' }}>{s.name === '栗原' ? '管理者' : '介護従事者'}</td>
-                  <td style={{ textAlign: 'center' }}>{s.name === '栗原' ? 'B' : 'C'}</td>
-                  <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{s.name} {s.can_kitchen && '🍳'}</td>
+                  <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? '管理者' : '介護従事者'}</td>
+                  <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? 'B' : 'C'}</td>
+                  <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{staff.name} {staff.can_kitchen && '🍳'}</td>
                   
-                  {/* 💡 毎マス確実に正しい日付のみを描画するループ処理 */}
                   {[...Array(30)].map((_, dayIndex) => {
                     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
-                    const shift = currentStaffShifts.find(s => s.date === dayStr);
+                    const shift = currentStaffShifts.find(sh => sh.date === dayStr);
                     const isFocused = focusedStaffIndex === staffIndex && focusedDayIndex === dayIndex;
                     const displayType = shift ? shift.shift_type : "";
                     
                     return (
                       <td 
-                        key={`${s.id}-${dayIndex}`}
+                        key={`${staff.id}-${dayIndex}`}
                         onClick={() => {
-                          handleCellClick(staffIndex, dayIndex, s.id, dayStr, displayType);
+                          handleCellClick(staffIndex, dayIndex, staff.id, dayStr, displayType);
                         }}
                         style={{ 
                           padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
