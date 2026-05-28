@@ -44,7 +44,7 @@ function App() {
   const otherStaffs = staffs.filter(s => s.name !== '栗原');
   const allStaffs = kurihara ? [kurihara, ...otherStaffs] : otherStaffs;
 
-  // 💡 十字キー移動 ＆ 数字入力の同時監視ロジック
+  // 十字キー移動 ＆ 数字入力の同時監視ロジック
   useEffect(() => {
     const handleKeyDown = async (e) => {
       if (focusedStaffIndex === null || focusedDayIndex === null || loading || allStaffs.length === 0) return;
@@ -71,7 +71,7 @@ function App() {
         return;
       }
 
-      // 2. ⭕ 凡例に合わせて数字キーの割り当てを完全修正
+      // 2. 数字キーの割り当て
       let newValue = null;
       if (e.key === '1') newValue = "朝";
       else if (e.key === '2') newValue = "①";
@@ -87,7 +87,7 @@ function App() {
         const targetStaff = allStaffs[focusedStaffIndex];
         const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
-        // 💡 画面の表示（描画）と100%同じルールで、重複データの中から「本物の1件」を特定する
+        // 画面の表示と完全に同期したレコードを特定
         const currentStaffShifts = shifts.filter(s => s.staff_id === targetStaff.id && s.date.includes('-06-'));
         const targetShift = currentStaffShifts.find(s => s.date === dayStr);
 
@@ -128,22 +128,33 @@ function App() {
     updateShiftData(shiftId, nextType);
   }
 
+  // 💡 集計ロジックを修正：重複を排除し、画面に見えている有効な1件だけをカウントする
   const getCoverage = (dayIndex) => {
     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
     const prevDayStr = dayIndex === 0 ? '2026-05-31' : `2026-06-${String(dayIndex).padStart(2, '0')}`;
-    const todayShifts = shifts.filter(s => s.date === dayStr);
-    const prevDayShifts = shifts.filter(s => s.date === prevDayStr);
+    
+    // 当日の画面表示用データを各スタッフから1件ずつ抽出
+    const todayValidShifts = allStaffs.map(staff => {
+      const staffShifts = shifts.filter(s => s.staff_id === staff.id);
+      return staffShifts.find(s => s.date === dayStr);
+    }).filter(Boolean);
 
-    const workingStaffIds = todayShifts
+    // 前日の画面表示用データを各スタッフから1件ずつ抽出 (夜勤カウント用)
+    const prevValidShifts = allStaffs.map(staff => {
+      const staffShifts = shifts.filter(s => s.staff_id === staff.id);
+      return staffShifts.find(s => s.date === prevDayStr);
+    }).filter(Boolean);
+
+    const workingStaffIds = todayValidShifts
       .filter(s => ["朝", "①", "②", "③"].includes(s.shift_type))
       .map(s => s.staff_id);
 
     return {
-      t7_9: todayShifts.filter(s => ["朝", "①"].includes(s.shift_type)).length + 
-            prevDayShifts.filter(s => s.shift_type === "夜勤").length,
-      t10_16: todayShifts.filter(s => ["①", "②", "③"].includes(s.shift_type)).length,
-      t17_18: todayShifts.filter(s => ["②", "③", "夕", "夜勤"].includes(s.shift_type)).length,
-      kitchenOk: staffs.some(s => s.can_kitchen && workingStaffIds.includes(s.id))
+      t7_9: todayValidShifts.filter(s => ["朝", "①"].includes(s.shift_type)).length + 
+            prevValidShifts.filter(s => s.shift_type === "夜勤").length,
+      t10_16: todayValidShifts.filter(s => ["①", "②", "③"].includes(s.shift_type)).length,
+      t17_18: todayValidShifts.filter(s => ["②", "③", "夕", "夜勤"].includes(s.shift_type)).length,
+      kitchenOk: allStaffs.some(s => s.can_kitchen && workingStaffIds.includes(s.id))
     };
   };
 
