@@ -200,8 +200,12 @@ function App() {
                   <td style={{ textAlign: 'center' }}>{s.name === '栗原' ? 'B' : 'C'}</td>
                   <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{s.name} {s.can_kitchen && '🍳'}</td>
                   
-                  {currentStaffShifts.map((shift, dayIndex) => {
+                  {/* 💡 データの重複があってもきっちり30日分だけ綺麗にマスを描画するループ */}
+                  {[...Array(30)].map((_, dayIndex) => {
+                    const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
+                    const shift = currentStaffShifts.find(s => s.date === dayStr) || { id: `empty-${dayIndex}`, shift_type: "" };
                     const isFocused = focusedStaffIndex === staffIndex && focusedDayIndex === dayIndex;
+                    
                     return (
                       <td 
                         key={shift.id} 
@@ -209,12 +213,16 @@ function App() {
                           setFocusedStaffIndex(staffIndex);
                           setFocusedDayIndex(dayIndex);
                         }}
-                        onClick={() => handleCellClick(shift.id, shift.shift_type)}
+                        onClick={() => {
+                          if (!shift.id.toString().startsWith('empty')) {
+                            handleCellClick(shift.id, shift.shift_type);
+                          }
+                        }}
                         style={{ 
                           padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
                           backgroundColor: SHIFT_INFO[shift.shift_type || ""].color,
                           fontWeight: shift.shift_type ? 'bold' : 'normal',
-                          outline: isFocused ? '2px solid #2196F3' : 'none', // 選択マスを青線で囲む
+                          outline: isFocused ? '2px solid #2196F3' : 'none',
                           zIndex: isFocused ? 10 : 1,
                           position: 'relative'
                         }}
