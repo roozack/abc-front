@@ -6,8 +6,6 @@ const supabase = createClient(
   "sb_publishable_f9gZpCz1to78Fz8toEYq_A_DTZzAax9"
 )
 
-const SHIFT_OPTIONS = ["", "朝", "①", "②", "③", "夕", "夜勤"];
-
 const SHIFT_INFO = {
   "朝": { time: "7時～9時または7時から10時半", color: "transparent" },
   "①": { time: "7時～16時", color: "#fff9c4" },
@@ -127,15 +125,10 @@ function App() {
     setLoading(false)
   }
 
-  // セルクリック時に青枠（フォーカス）を完全に固定し、次のシフト記号へサイクル
-  function handleCellClick(staffIndex, dayIndex, staffId, dateStr, currentType) {
-    if (loading) return
+  // 💡【修正】セルクリック時は青枠（フォーカス）の「選択だけ」を行うようにスリム化
+  function handleCellClick(staffIndex, dayIndex) {
     setFocusedStaffIndex(staffIndex);
     setFocusedDayIndex(dayIndex);
-    
-    const currentIndex = SHIFT_OPTIONS.indexOf(currentType || "");
-    const nextType = SHIFT_OPTIONS[(currentIndex + 1) % SHIFT_OPTIONS.length];
-    updateShiftData(staffId, dateStr, nextType);
   }
 
   // 集計ロジック（重複を完全に排除し、画面に見えている有効な1件だけを確実にカウント）
@@ -230,8 +223,9 @@ function App() {
                     return (
                       <td 
                         key={`${staff.id}-${dayIndex}`}
+                        /* 💡【修正】クリックした時は、純粋に選択処理だけを呼び出す */
                         onClick={() => {
-                          handleCellClick(staffIndex, dayIndex, staff.id, dayStr, displayType);
+                          handleCellClick(staffIndex, dayIndex);
                         }}
                         style={{ 
                           padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
