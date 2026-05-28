@@ -87,13 +87,8 @@ function App() {
         const targetStaff = allStaffs[focusedStaffIndex];
         const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
-        // 画面の表示と完全に同期したレコードを特定
-        const currentStaffShifts = shifts.filter(s => s.staff_id === targetStaff.id && s.date.includes('-06-'));
-        const targetShift = currentStaffShifts.find(s => s.date === dayStr);
-
-        if (targetShift && !targetShift.id.toString().startsWith('empty')) {
-          await updateShiftData(targetShift.id, newValue);
-        }
+        // 💡 staff_id と date を直接指定して一括更新（重複データをまとめて上書き・浄化）
+        await updateShiftData(targetStaff.id, dayStr, newValue);
       }
     };
 
@@ -114,32 +109,40 @@ function App() {
     setShifts(mData || [])
   }
 
-  async function updateShiftData(shiftId, newValue) {
+  // 💡 修正：スタッフIDと日付を条件に一括アップデートをかけ、重複バグを根本治療する
+  async function updateShiftData(staffId, dateStr, newValue) {
     setLoading(true)
-    const { error } = await supabase.from('monthly_shifts').update({ shift_type: newValue }).eq('id', shiftId)
+    const { error } = await supabase
+      .from('monthly_shifts')
+      .update({ shift_type: newValue })
+      .eq('staff_id', staffId)
+      .eq('date', dateStr)
+      
     if (!error) await fetchData()
     setLoading(false)
   }
 
-  function handleCellClick(shiftId, currentType) {
+  // 💡 修正：セルクリック時に青枠（フォーカス）をその位置に完全に固定する
+  function handleCellClick(staffIndex, dayIndex, staffId, dateStr, currentType) {
     if (loading) return
+    setFocusedStaffIndex(staffIndex);
+    setFocusedDayIndex(dayIndex);
+    
     const currentIndex = SHIFT_OPTIONS.indexOf(currentType || "");
     const nextType = SHIFT_OPTIONS[(currentIndex + 1) % SHIFT_OPTIONS.length];
-    updateShiftData(shiftId, nextType);
+    updateShiftData(staffId, dateStr, nextType);
   }
 
-  // 💡 集計ロジックを修正：重複を排除し、画面に見えている有効な1件だけをカウントする
+  // 集計ロジック（重複を排除し、有効な1件だけを確実にカウント）
   const getCoverage = (dayIndex) => {
     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
     const prevDayStr = dayIndex === 0 ? '2026-05-31' : `2026-06-${String(dayIndex).padStart(2, '0')}`;
     
-    // 当日の画面表示用データを各スタッフから1件ずつ抽出
     const todayValidShifts = allStaffs.map(staff => {
       const staffShifts = shifts.filter(s => s.staff_id === staff.id);
       return staffShifts.find(s => s.date === dayStr);
     }).filter(Boolean);
 
-    // 前日の画面表示用データを各スタッフから1件ずつ抽出 (夜勤カウント用)
     const prevValidShifts = allStaffs.map(staff => {
       const staffShifts = shifts.filter(s => s.staff_id === staff.id);
       return staffShifts.find(s => s.date === prevDayStr);
@@ -220,15 +223,9 @@ function App() {
                     
                     return (
                       <td 
-                        key={shift.id} 
-                        onMouseEnter={() => {
-                          setFocusedStaffIndex(staffIndex);
-                          setFocusedDayIndex(dayIndex);
-                        }}
+                        key={`${s.id}-${dayIndex}`}
                         onClick={() => {
-                          if (!shift.id.toString().startsWith('empty')) {
-                            handleCellClick(shift.id, shift.shift_type);
-                          }
+                          handleCellClick(staffIndex, dayIndex, s.id, dayStr, shift.shift_type);
                         }}
                         style={{ 
                           padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
