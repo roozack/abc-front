@@ -13,7 +13,7 @@ const SHIFT_INFO = {
   "①": { time: "7時～16時", color: "#fff9c4" },
   "②": { time: "9時～17時または9時～18時", color: "#fff9c4" },
   "③": { time: "10時半から19時半", color: "#fff9c4" },
-  "夕": { time: "16時半～19時半", color: "transparent" },
+  "夕": { time: "16時～19時半", color: "transparent" },
   "夜勤": { time: "17時から9時", color: "#c8e6c9" },
   "": { time: "-", color: "transparent" }
 };
@@ -49,7 +49,7 @@ function App() {
     const handleKeyDown = async (e) => {
       if (focusedStaffIndex === null || focusedDayIndex === null || loading || allStaffs.length === 0) return;
 
-      // 1. 十字キーによる選択マスの移動（画面スクロールを防止しつつ移動）
+      // 1. 十字キーによる選択マスの移動
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusedStaffIndex(prev => (prev > 0 ? prev - 1 : prev));
@@ -71,12 +71,12 @@ function App() {
         return;
       }
 
-      // 2. 数字キー・消去キーによるシフト入力
+      // 2. ⭕ 凡例に合わせて数字キーの割り当てを完全修正
       let newValue = null;
-      if (e.key === '1') newValue = "①";
-      else if (e.key === '2') newValue = "②";
-      else if (e.key === '3') newValue = "③";
-      else if (e.key === '4') newValue = "朝";
+      if (e.key === '1') newValue = "朝";
+      else if (e.key === '2') newValue = "①";
+      else if (e.key === '3') newValue = "②";
+      else if (e.key === '4') newValue = "③";
       else if (e.key === '5') newValue = "夕";
       else if (e.key === '6') newValue = "夜勤";
       else if (e.key === '0' || e.key === 'Backspace' || e.key === 'Delete') newValue = "";
@@ -86,9 +86,12 @@ function App() {
         
         const targetStaff = allStaffs[focusedStaffIndex];
         const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
-        const targetShift = shifts.find(s => s.staff_id === targetStaff.id && s.date === dayStr);
+        
+        // 💡 画面の表示（描画）と100%同じルールで、重複データの中から「本物の1件」を特定する
+        const currentStaffShifts = shifts.filter(s => s.staff_id === targetStaff.id && s.date.includes('-06-'));
+        const targetShift = currentStaffShifts.find(s => s.date === dayStr);
 
-        if (targetShift) {
+        if (targetShift && !targetShift.id.toString().startsWith('empty')) {
           await updateShiftData(targetShift.id, newValue);
         }
       }
@@ -192,7 +195,6 @@ function App() {
               
               return (
                 <tr key={s.id}>
-                  {/* 先頭行だけグループ名(星)をrowSpanで表示 */}
                   {staffIndex === 0 && (
                     <td rowSpan={allStaffs.length + 4} style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '3px solid #333' }}>（星）</td>
                   )}
@@ -200,7 +202,6 @@ function App() {
                   <td style={{ textAlign: 'center' }}>{s.name === '栗原' ? 'B' : 'C'}</td>
                   <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{s.name} {s.can_kitchen && '🍳'}</td>
                   
-                  {/* 💡 データの重複があってもきっちり30日分だけ綺麗にマスを描画するループ */}
                   {[...Array(30)].map((_, dayIndex) => {
                     const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
                     const shift = currentStaffShifts.find(s => s.date === dayStr) || { id: `empty-${dayIndex}`, shift_type: "" };
@@ -235,7 +236,7 @@ function App() {
               )
             })}
             
-            {/* 検品行（印刷時は非表示） */}
+            {/* 検品行 */}
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold', borderTop: '2px solid #333' }}>
               <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>① 7-9時 (要2)</td>
               {[...Array(30)].map((_, i) => {
@@ -268,7 +269,7 @@ function App() {
         </table>
       </div>
 
-      {/* 凡例セクション（印刷時は非表示） */}
+      {/* 凡例セクション */}
       <div className="no-print" style={{ display: 'flex', gap: '15px' }}>
         <div style={{ flex: 1, backgroundColor: 'white', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
           <h4 style={{ margin: '0 0 5px 0', fontSize: '11px', borderBottom: '1px solid #eee' }}>シフト記号入力ショートカット</h4>
