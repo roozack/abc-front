@@ -31,13 +31,25 @@ function App() {
   const [shifts, setShifts] = useState([])
   const [loading, setLoading] = useState(false)
   
+  // 💡【新機能】選択中の年・月を管理するステート（初期値：2026年6月）
+  const [currentYear, setCurrentYear] = useState(2026)
+  const [currentMonth, setCurrentMonth] = useState(6)
+  
   // クリック選択と十字キー移動のためのインデックス
   const [focusedStaffIndex, setFocusedStaffIndex] = useState(null)
   const [focusedDayIndex, setFocusedDayIndex] = useState(null)
 
-  useEffect(() => { fetchData() }, [])
+  // 💡【自動計算】選択された年月の「末日（日数）」を自動取得（30日、31日、28日など）
+  const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
 
-  // スタッフの配列を整理（星グループとして一本化）
+  // 年月が切り替わるたびにデータを再フェッチ
+  useEffect(() => { 
+    fetchData() 
+    // 年月が変わったら選択枠（青枠）を安全のために一回リセット
+    setFocusedStaffIndex(null)
+    setFocusedDayIndex(null)
+  }, [currentYear, currentMonth])
+
   const kurihara = staffs.find(staff => staff.name === '栗原');
   const otherStaffs = staffs.filter(staff => staff.name !== '栗原');
   const allStaffs = kurihara ? [kurihara, ...otherStaffs] : otherStaffs;
@@ -47,7 +59,7 @@ function App() {
     const handleKeyDown = async (e) => {
       if (focusedStaffIndex === null || focusedDayIndex === null || loading || allStaffs.length === 0) return;
 
-      // 1. 十字キーによる選択マスの移動
+      // 1. 十字キーによる選択マスの移動（右端の移動制限をdaysInMonthに連動）
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusedStaffIndex(prev => (prev > 0 ? prev - 1 : prev));
@@ -65,11 +77,11 @@ function App() {
       }
       if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setFocusedDayIndex(prev => (prev < 29 ? prev + 1 : prev));
+        setFocusedDayIndex(prev => (prev < daysInMonth - 1 ? prev + 1 : prev));
         return;
       }
 
-      // 2. 凡例に合わせた正確な数字キーの割り当て
+      // 2. 数字キーの割り当て
       let newValue = null;
       if (e.key === '1') newValue = "朝";
       else if (e.key === '2') newValue = "①";
@@ -82,7 +94,8 @@ function App() {
       if (newValue !== null) {
         e.preventDefault();
         const targetStaff = allStaffs[focusedStaffIndex];
-        const dayStr = `2026-06-${String(focusedDayIndex + 1).padStart(2, '0')}`;
+        // 💡 日付文字列を現在の選択年月に合わせて動的生成
+        const dayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
         await updateShiftData(targetStaff.id, dayStr, newValue);
       }
@@ -90,15 +103,23 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedStaffIndex, focusedDayIndex, loading, shifts, allStaffs]);
+  }, [focusedStaffIndex, focusedDayIndex, loading, shifts, allStaffs, currentYear, currentMonth, daysInMonth]);
 
+  // 💡【修正】選んだ年月に合わせて、取得するデータの全日付範囲を自動計算してフェッチ
   async function fetchData() {
+    // 前月の末日（夜勤の引き継ぎ計算用）
+    const prevMonthLastDate = new Date(currentYear, currentMonth - 1, 0);
+    const prevDayStr = `${prevMonthLastDate.getFullYear()}-${String(prevMonthLastDate.getMonth() + 1).padStart(2, '0')}-${String(prevMonthLastDate.getDate()).padStart(2, '0')}`;
+    
+    // 当月の末日
+    const todayStrMax = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
     const { data: sData } = await supabase.from('123').select('*').order('id', { ascending: true })
     const { data: mData } = await supabase
       .from('monthly_shifts')
       .select('*')
-      .gte('date', '2026-05-31') 
-      .lte('date', '2026-06-30')
+      .gte('date', prevDayStr) 
+      .lte('date', todayStrMax)
       .order('date', { ascending: true })
 
     setStaffs(sData || [])
@@ -125,16 +146,20 @@ function App() {
     setLoading(false)
   }
 
-  // 💡【修正】セルクリック時は青枠（フォーカス）の「選択だけ」を行うようにスリム化
+  // セルクリック時はマスの選択のみを行う
   function handleCellClick(staffIndex, dayIndex) {
     setFocusedStaffIndex(staffIndex);
     setFocusedDayIndex(dayIndex);
   }
 
-  // 集計ロジック（重複を完全に排除し、画面に見えている有効な1件だけを確実にカウント）
+  // 集計ロジック（選択中の年月・日数に完全連動）
   const getCoverage = (dayIndex) => {
-    const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
-    const prevDayStr = dayIndex === 0 ? '2026-05-31' : `2026-06-${String(dayIndex).padStart(2, '0')}`;
+    const dayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dayIndex + 1).padStart(2, '0')}`;
+    
+    // 前日の日付を計算
+    const currentDayDate = new Date(currentYear, currentMonth - 1, dayIndex + 1);
+    currentDayDate.setDate(currentDayDate.getDate() - 1);
+    const prevDayStr = `${currentDayDate.getFullYear()}-${String(currentDayDate.getMonth() + 1).padStart(2, '0')}-${String(currentDayDate.getDate()).padStart(2, '0')}`;
     
     const todayValidShifts = allStaffs.map(staff => {
       const staffShifts = shifts.filter(sh => sh.staff_id === staff.id);
@@ -173,10 +198,25 @@ function App() {
       `}</style>
 
       <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-        <h1 style={{ margin: 0, fontSize: '20px' }}>令和8年6月 勤務予定表</h1>
-        <button className="no-print" onClick={() => window.print()} style={{ marginTop: '10px', padding: '8px 16px', cursor: 'pointer', backgroundColor: '#2e7d32', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}>
-          🖨️ シフト表を印刷する
-        </button>
+        {/* 💡【新機能】タイトルを選んだ年月と自動連動 */}
+        <h1 style={{ margin: 0, fontSize: '20px' }}>令和8年{currentMonth}月 勤務予定表</h1>
+        
+        {/* 💡【新機能】年月をいつでも切り替えられるプルダウンメニューを追加 */}
+        <div className="no-print" style={{ marginTop: '10px', display: 'flex', justifyContent: 'center', gap: '10px', alignItems: 'center' }}>
+          <select 
+            value={currentMonth} 
+            onChange={(e) => setCurrentMonth(Number(e.target.value))}
+            style={{ padding: '5px 10px', fontSize: '12px', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            {[4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
+              <option key={m} value={m}>{m}月度</option>
+            ))}
+          </select>
+
+          <button onClick={() => window.print()} style={{ padding: '6px 16px', cursor: 'pointer', backgroundColor: '#2e7d32', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>
+            🖨️ シフト表を印刷する
+          </button>
+        </div>
       </div>
       
       <div className="main-container" style={{ backgroundColor: 'white', padding: '15px', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflowX: 'auto', marginBottom: '15px' }}>
@@ -187,11 +227,13 @@ function App() {
               <th rowSpan="2" style={{ width: '80px' }}>氏名</th>
               <th rowSpan="2" style={{ width: '40px' }}>形態</th>
               <th rowSpan="2" style={{ width: '80px' }}>スタッフ</th>
-              {[...Array(30)].map((_, i) => <th key={i} style={{ width: '28px' }}>{i + 1}</th>)}
+              {/* 💡【動的化】30固定をやめ、今月の日数分だけループ回数を自動可変させる */}
+              {[...Array(daysInMonth)].map((_, i) => <th key={i} style={{ width: '28px' }}>{i + 1}</th>)}
             </tr>
             <tr style={{ backgroundColor: '#eeeeee' }}>
-              {[...Array(30)].map((_, i) => {
-                const day = new Date(2026, 5, i + 1).getDay();
+              {/* 💡【動的化】曜日の判定も、選択中の年月と日数に完全連動 */}
+              {[...Array(daysInMonth)].map((_, i) => {
+                const day = new Date(currentYear, currentMonth - 1, i + 1).getDay();
                 const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
                 return (
                   <th key={i} style={{ backgroundColor: day === 0 ? '#ffcdd2' : day === 6 ? '#bbdefb' : 'inherit' }}>
@@ -203,7 +245,11 @@ function App() {
           </thead>
           <tbody>
             {allStaffs.map((staff, staffIndex) => {
-              const currentStaffShifts = shifts.filter(shift => shift.staff_id === staff.id && shift.date.includes('-06-'));
+              // 当月データのみを抽出
+              const currentStaffShifts = shifts.filter(shift => {
+                const targetMonthStr = `-${String(currentMonth).padStart(2, '0')}-`;
+                return shift.staff_id === staff.id && shift.date.includes(targetMonthStr);
+              });
               
               return (
                 <tr key={staff.id}>
@@ -214,8 +260,9 @@ function App() {
                   <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? 'B' : 'C'}</td>
                   <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{staff.name} {staff.can_kitchen && '🍳'}</td>
                   
-                  {[...Array(30)].map((_, dayIndex) => {
-                    const dayStr = `2026-06-${String(dayIndex + 1).padStart(2, '0')}`;
+                  {/* 💡【動的化】マス目の描画も今月の日数に100%自動追従 */}
+                  {[...Array(daysInMonth)].map((_, dayIndex) => {
+                    const dayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dayIndex + 1).padStart(2, '0')}`;
                     const shift = currentStaffShifts.find(sh => sh.date === dayStr);
                     const isFocused = focusedStaffIndex === staffIndex && focusedDayIndex === dayIndex;
                     const displayType = shift ? shift.shift_type : "";
@@ -223,7 +270,6 @@ function App() {
                     return (
                       <td 
                         key={`${staff.id}-${dayIndex}`}
-                        /* 💡【修正】クリックした時は、純粋に選択処理だけを呼び出す */
                         onClick={() => {
                           handleCellClick(staffIndex, dayIndex);
                         }}
@@ -247,28 +293,28 @@ function App() {
             {/* 検品行 */}
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold', borderTop: '2px solid #333' }}>
               <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>① 7-9時 (要2)</td>
-              {[...Array(30)].map((_, i) => {
+              {[...Array(daysInMonth)].map((_, i) => {
                 const count = getCoverage(i).t7_9;
                 return <td key={i} style={{ textAlign: 'center', color: count < 2 ? 'red' : 'inherit' }}>{count}</td>
               })}
             </tr>
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
               <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>② 10-16時 (要3)</td>
-              {[...Array(30)].map((_, i) => {
+              {[...Array(daysInMonth)].map((_, i) => {
                 const count = getCoverage(i).t10_16;
                 return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
               })}
             </tr>
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
               <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>③ 17-18時 (要3)</td>
-              {[...Array(30)].map((_, i) => {
+              {[...Array(daysInMonth)].map((_, i) => {
                 const count = getCoverage(i).t17_18;
                 return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
               })}
             </tr>
             <tr className="no-print" style={{ backgroundColor: '#fff5f5', fontWeight: 'bold' }}>
               <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px', color: '#c62828' }}>④ キッチン不在</td>
-              {[...Array(30)].map((_, i) => {
+              {[...Array(daysInMonth)].map((_, i) => {
                 const ok = getCoverage(i).kitchenOk;
                 return <td key={i} style={{ textAlign: 'center', backgroundColor: ok ? 'transparent' : '#ffcdd2' }}>{ok ? '' : '⚠️'}</td>
               })}
