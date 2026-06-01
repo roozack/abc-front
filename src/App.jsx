@@ -31,36 +31,37 @@ function App() {
   const [shifts, setShifts] = useState([])
   const [loading, setLoading] = useState(false)
   
-  // 選択中の月を管理（初期値：6月）
   const [currentMonth, setCurrentMonth] = useState(6)
   
-  // クリック選択と十字キー移動のためのインデックス
   const [focusedStaffIndex, setFocusedStaffIndex] = useState(null)
   const [focusedDayIndex, setFocusedDayIndex] = useState(null)
 
-  // 💡【新ロジック】1月〜3月が選ばれた場合は自動で2027年、4月〜12月は2026年として年を動的判定！
   const displayYear = (currentMonth >= 1 && currentMonth <= 3) ? 2027 : 2026;
-
-  // 動的に決まった年に基づいて、その月の末日（日数）を自動計算
   const daysInMonth = new Date(displayYear, currentMonth, 0).getDate();
 
-  // 月が切り替わるたびにデータを再フェッチ
   useEffect(() => { 
     fetchData() 
     setFocusedStaffIndex(null)
     setFocusedDayIndex(null)
   }, [currentMonth])
 
-  const kurihara = staffs.find(staff => staff.name === '栗原');
-  const otherStaffs = staffs.filter(staff => staff.name !== '栗原');
-  const allStaffs = kurihara ? [kurihara, ...otherStaffs] : otherStaffs;
+  // 💡 栗原さんを一番上にしつつ、グループごとに並び替える（見栄えを良くするため）
+  const sortedStaffs = [...staffs].sort((a, b) => {
+    if (a.name === '栗原') return -1;
+    if (b.name === '栗原') return 1;
+    const groupA = a.group_name || '星';
+    const groupB = b.group_name || '星';
+    if (groupA < groupB) return -1;
+    if (groupA > groupB) return 1;
+    return 0;
+  });
+  
+  const allStaffs = sortedStaffs;
 
-  // 十字キー移動 ＆ 数字入力の同時監視ロジック
   useEffect(() => {
     const handleKeyDown = async (e) => {
       if (focusedStaffIndex === null || focusedDayIndex === null || loading || allStaffs.length === 0) return;
 
-      // 1. 十字キーによる選択マスの移動
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusedStaffIndex(prev => (prev > 0 ? prev - 1 : prev));
@@ -82,7 +83,6 @@ function App() {
         return;
       }
 
-      // 2. 数字キーの割り当て
       let newValue = null;
       if (e.key === '1') newValue = "朝";
       else if (e.key === '2') newValue = "①";
@@ -95,7 +95,6 @@ function App() {
       if (newValue !== null) {
         e.preventDefault();
         const targetStaff = allStaffs[focusedStaffIndex];
-        // 💡 年をまたいだ正しい日付文字列を動的生成
         const dayStr = `${displayYear}-${String(currentMonth).padStart(2, '0')}-${String(focusedDayIndex + 1).padStart(2, '0')}`;
         
         await updateShiftData(targetStaff.id, dayStr, newValue);
@@ -106,7 +105,6 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [focusedStaffIndex, focusedDayIndex, loading, shifts, allStaffs, currentMonth, daysInMonth, displayYear]);
 
-  // 選んだ年月に合わせて、取得するデータの全日付範囲を自動計算してフェッチ
   async function fetchData() {
     const prevMonthLastDate = new Date(displayYear, currentMonth - 1, 0);
     const prevDayStr = `${prevMonthLastDate.getFullYear()}-${String(prevMonthLastDate.getMonth() + 1).padStart(2, '0')}-${String(prevMonthLastDate.getDate()).padStart(2, '0')}`;
@@ -124,10 +122,8 @@ function App() {
     setShifts(mData || [])
   }
 
-  // 古い重複データを一回「全削除」してから「1件だけピカピカにインサート」する鉄壁ロジック
   async function updateShiftData(staffId, dateStr, newValue) {
     setLoading(true)
-    
     await supabase
       .from('monthly_shifts')
       .delete()
@@ -139,21 +135,17 @@ function App() {
         .from('monthly_shifts')
         .insert({ staff_id: staffId, date: dateStr, shift_type: newValue })
     }
-      
     await fetchData()
     setLoading(false)
   }
 
-  // セルクリック時はマスの選択のみを行う
   function handleCellClick(staffIndex, dayIndex) {
     setFocusedStaffIndex(staffIndex);
     setFocusedDayIndex(dayIndex);
   }
 
-  // 集計ロジック
   const getCoverage = (dayIndex) => {
     const dayStr = `${displayYear}-${String(currentMonth).padStart(2, '0')}-${String(dayIndex + 1).padStart(2, '0')}`;
-    
     const currentDayDate = new Date(displayYear, currentMonth - 1, dayIndex + 1);
     currentDayDate.setDate(currentDayDate.getDate() - 1);
     const prevDayStr = `${currentDayDate.getFullYear()}-${String(currentDayDate.getMonth() + 1).padStart(2, '0')}-${String(currentDayDate.getDate()).padStart(2, '0')}`;
@@ -195,21 +187,17 @@ function App() {
       `}</style>
 
       <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-        {/* 💡【修正】タイトルを「令和8年度」表記に変更し、年度内のすべての月に対応 */}
         <h1 style={{ margin: 0, fontSize: '20px' }}>令和8年度 {currentMonth}月 勤務予定表</h1>
-        
         <div className="no-print" style={{ marginTop: '10px', display: 'flex', justifyContent: 'center', gap: '10px', alignItems: 'center' }}>
           <select 
             value={currentMonth} 
             onChange={(e) => setCurrentMonth(Number(e.target.value))}
             style={{ padding: '5px 10px', fontSize: '12px', borderRadius: '4px', cursor: 'pointer' }}
           >
-            {/* 💡【修正】1月〜12月まですべての月を選択肢に拡張！ */}
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
               <option key={m} value={m}>{m}月度</option>
             ))}
           </select>
-
           <button onClick={() => window.print()} style={{ padding: '6px 16px', cursor: 'pointer', backgroundColor: '#2e7d32', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px' }}>
             🖨️ シフト表を印刷する
           </button>
@@ -244,11 +232,18 @@ function App() {
                 const targetMonthStr = `-${String(currentMonth).padStart(2, '0')}-`;
                 return shift.staff_id === staff.id && shift.date.includes(targetMonthStr);
               });
+
+              // 💡【新ロジック】動的にグループを判定して、各グループの先頭の人にだけ「区分」のセルを表示する
+              const currentGroupName = staff.group_name || '星';
+              const isFirstInGroup = allStaffs.findIndex(s => (s.group_name || '星') === currentGroupName) === staffIndex;
+              const groupMembersCount = allStaffs.filter(s => (s.group_name || '星') === currentGroupName).length;
               
               return (
                 <tr key={staff.id}>
-                  {staffIndex === 0 && (
-                    <td rowSpan={allStaffs.length + 4} style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '3px solid #333' }}>（星）</td>
+                  {isFirstInGroup && (
+                    <td rowSpan={groupMembersCount} style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '3px solid #333' }}>
+                      （{currentGroupName}）
+                    </td>
                   )}
                   <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? '管理者' : '介護従事者'}</td>
                   <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? 'B' : 'C'}</td>
@@ -263,9 +258,7 @@ function App() {
                     return (
                       <td 
                         key={`${staff.id}-${dayIndex}`}
-                        onClick={() => {
-                          handleCellClick(staffIndex, dayIndex);
-                        }}
+                        onClick={() => handleCellClick(staffIndex, dayIndex)}
                         style={{ 
                           padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
                           backgroundColor: SHIFT_INFO[displayType || ""].color,
@@ -283,30 +276,30 @@ function App() {
               )
             })}
             
-            {/* 検品行 */}
+            {/* 💡【修正】下の検品行が表全体に綺麗にまたがるように colSpan を 3 から 4 に変更 */}
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold', borderTop: '2px solid #333' }}>
-              <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>① 7-9時 (要2)</td>
+              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px' }}>① 7-9時 (要2)</td>
               {[...Array(daysInMonth)].map((_, i) => {
                 const count = getCoverage(i).t7_9;
                 return <td key={i} style={{ textAlign: 'center', color: count < 2 ? 'red' : 'inherit' }}>{count}</td>
               })}
             </tr>
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
-              <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>② 10-16時 (要3)</td>
+              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px' }}>② 10-16時 (要3)</td>
               {[...Array(daysInMonth)].map((_, i) => {
                 const count = getCoverage(i).t10_16;
                 return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
               })}
             </tr>
             <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
-              <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>③ 17-18時 (要3)</td>
+              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px' }}>③ 17-18時 (要3)</td>
               {[...Array(daysInMonth)].map((_, i) => {
                 const count = getCoverage(i).t17_18;
                 return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
               })}
             </tr>
             <tr className="no-print" style={{ backgroundColor: '#fff5f5', fontWeight: 'bold' }}>
-              <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px', color: '#c62828' }}>④ キッチン不在</td>
+              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px', color: '#c62828' }}>④ キッチン不在</td>
               {[...Array(daysInMonth)].map((_, i) => {
                 const ok = getCoverage(i).kitchenOk;
                 return <td key={i} style={{ textAlign: 'center', backgroundColor: ok ? 'transparent' : '#ffcdd2' }}>{ok ? '' : '⚠️'}</td>
@@ -316,7 +309,6 @@ function App() {
         </table>
       </div>
 
-      {/* 凡例セクション */}
       <div className="no-print" style={{ display: 'flex', gap: '15px' }}>
         <div style={{ flex: 1, backgroundColor: 'white', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
           <h4 style={{ margin: '0 0 5px 0', fontSize: '11px', borderBottom: '1px solid #eee' }}>シフト記号入力ショートカット</h4>
