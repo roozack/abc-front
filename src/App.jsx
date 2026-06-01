@@ -45,7 +45,7 @@ function App() {
     setFocusedDayIndex(null)
   }, [currentMonth])
 
-  // 💡 栗原さんを一番上にしつつ、グループごとに並び替える（見栄えを良くするため）
+  // グループ名でソート
   const sortedStaffs = [...staffs].sort((a, b) => {
     if (a.name === '栗原') return -1;
     if (b.name === '栗原') return 1;
@@ -57,6 +57,9 @@ function App() {
   });
   
   const allStaffs = sortedStaffs;
+  
+  // 💡【新機能】存在するすべてのグループ名を抽出（['A', 'B'] など）
+  const groupNames = [...new Set(allStaffs.map(s => s.group_name || '星'))];
 
   useEffect(() => {
     const handleKeyDown = async (e) => {
@@ -144,18 +147,22 @@ function App() {
     setFocusedDayIndex(dayIndex);
   }
 
-  const getCoverage = (dayIndex) => {
+  // 💡【修正】グループ名を指定して、そのグループだけの人数を集計するように改造
+  const getCoverage = (dayIndex, groupName) => {
     const dayStr = `${displayYear}-${String(currentMonth).padStart(2, '0')}-${String(dayIndex + 1).padStart(2, '0')}`;
     const currentDayDate = new Date(displayYear, currentMonth - 1, dayIndex + 1);
     currentDayDate.setDate(currentDayDate.getDate() - 1);
     const prevDayStr = `${currentDayDate.getFullYear()}-${String(currentDayDate.getMonth() + 1).padStart(2, '0')}-${String(currentDayDate.getDate()).padStart(2, '0')}`;
     
-    const todayValidShifts = allStaffs.map(staff => {
+    // 指定されたグループのスタッフだけを抽出して計算
+    const targetStaffs = allStaffs.filter(s => (s.group_name || '星') === groupName);
+
+    const todayValidShifts = targetStaffs.map(staff => {
       const staffShifts = shifts.filter(sh => sh.staff_id === staff.id);
       return staffShifts.find(sh => sh.date === dayStr);
     }).filter(Boolean);
 
-    const prevValidShifts = allStaffs.map(staff => {
+    const prevValidShifts = targetStaffs.map(staff => {
       const staffShifts = shifts.filter(sh => sh.staff_id === staff.id);
       return staffShifts.find(sh => sh.date === prevDayStr);
     }).filter(Boolean);
@@ -169,7 +176,7 @@ function App() {
             prevValidShifts.filter(sh => sh.shift_type === "夜勤").length,
       t10_16: todayValidShifts.filter(sh => ["①", "②", "③"].includes(sh.shift_type)).length,
       t17_18: todayValidShifts.filter(sh => ["②", "③", "夕", "夜勤"].includes(sh.shift_type)).length,
-      kitchenOk: allStaffs.some(staff => staff.can_kitchen && workingStaffIds.includes(staff.id))
+      kitchenOk: targetStaffs.some(staff => staff.can_kitchen && workingStaffIds.includes(staff.id))
     };
   };
 
@@ -180,7 +187,7 @@ function App() {
           .no-print { display: none !important; } 
           body { padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .main-container { padding: 0 !important; background: transparent !important; box-shadow: none !important; }
-          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+          table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 20px !important; }
           th, td { border: 1px solid #000 !important; padding: 1px !important; }
           @page { size: landscape; margin: 5mm; }
         }
@@ -204,110 +211,117 @@ function App() {
         </div>
       </div>
       
-      <div className="main-container" style={{ backgroundColor: 'white', padding: '15px', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflowX: 'auto', marginBottom: '15px' }}>
-        <table border="1" style={{ borderCollapse: 'collapse', width: '100%', borderColor: '#333', fontSize: '10px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#eeeeee' }}>
-              <th rowSpan="2" style={{ width: '40px' }}>区分</th>
-              <th rowSpan="2" style={{ width: '80px' }}>氏名</th>
-              <th rowSpan="2" style={{ width: '40px' }}>形態</th>
-              <th rowSpan="2" style={{ width: '80px' }}>スタッフ</th>
-              {[...Array(daysInMonth)].map((_, i) => <th key={i} style={{ width: '28px' }}>{i + 1}</th>)}
-            </tr>
-            <tr style={{ backgroundColor: '#eeeeee' }}>
-              {[...Array(daysInMonth)].map((_, i) => {
-                const day = new Date(displayYear, currentMonth - 1, i + 1).getDay();
-                const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
-                return (
-                  <th key={i} style={{ backgroundColor: day === 0 ? '#ffcdd2' : day === 6 ? '#bbdefb' : 'inherit' }}>
-                    {dayNames[day]}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {allStaffs.map((staff, staffIndex) => {
-              const currentStaffShifts = shifts.filter(shift => {
-                const targetMonthStr = `-${String(currentMonth).padStart(2, '0')}-`;
-                return shift.staff_id === staff.id && shift.date.includes(targetMonthStr);
-              });
+      {/* 💡【新機能】グループの数（A, B）だけテーブルをまるごと独立して描画する */}
+      {groupNames.map((groupName) => {
+        const groupStaffs = allStaffs.filter(s => (s.group_name || '星') === groupName);
 
-              // 💡【新ロジック】動的にグループを判定して、各グループの先頭の人にだけ「区分」のセルを表示する
-              const currentGroupName = staff.group_name || '星';
-              const isFirstInGroup = allStaffs.findIndex(s => (s.group_name || '星') === currentGroupName) === staffIndex;
-              const groupMembersCount = allStaffs.filter(s => (s.group_name || '星') === currentGroupName).length;
-              
-              return (
-                <tr key={staff.id}>
-                  {isFirstInGroup && (
-                    <td rowSpan={groupMembersCount} style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '3px solid #333' }}>
-                      （{currentGroupName}）
-                    </td>
-                  )}
-                  <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? '管理者' : '介護従事者'}</td>
-                  <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? 'B' : 'C'}</td>
-                  <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{staff.name} {staff.can_kitchen && '🍳'}</td>
-                  
-                  {[...Array(daysInMonth)].map((_, dayIndex) => {
-                    const dayStr = `${displayYear}-${String(currentMonth).padStart(2, '0')}-${String(dayIndex + 1).padStart(2, '0')}`;
-                    const shift = currentStaffShifts.find(sh => sh.date === dayStr);
-                    const isFocused = focusedStaffIndex === staffIndex && focusedDayIndex === dayIndex;
-                    const displayType = shift ? shift.shift_type : "";
-                    
+        return (
+          <div key={groupName} className="main-container" style={{ backgroundColor: 'white', padding: '15px', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', overflowX: 'auto', marginBottom: '30px' }}>
+            <h2 style={{ fontSize: '14px', margin: '0 0 10px 0', color: '#333' }}>■ {groupName}グループ</h2>
+            <table border="1" style={{ borderCollapse: 'collapse', width: '100%', borderColor: '#333', fontSize: '10px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#eeeeee' }}>
+                  <th rowSpan="2" style={{ width: '40px' }}>区分</th>
+                  <th rowSpan="2" style={{ width: '80px' }}>氏名</th>
+                  <th rowSpan="2" style={{ width: '40px' }}>形態</th>
+                  <th rowSpan="2" style={{ width: '80px' }}>スタッフ</th>
+                  {[...Array(daysInMonth)].map((_, i) => <th key={i} style={{ width: '28px' }}>{i + 1}</th>)}
+                </tr>
+                <tr style={{ backgroundColor: '#eeeeee' }}>
+                  {[...Array(daysInMonth)].map((_, i) => {
+                    const day = new Date(displayYear, currentMonth - 1, i + 1).getDay();
+                    const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
                     return (
-                      <td 
-                        key={`${staff.id}-${dayIndex}`}
-                        onClick={() => handleCellClick(staffIndex, dayIndex)}
-                        style={{ 
-                          padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
-                          backgroundColor: SHIFT_INFO[displayType || ""].color,
-                          fontWeight: displayType ? 'bold' : 'normal',
-                          outline: isFocused ? '2px solid #2196F3' : 'none',
-                          zIndex: isFocused ? 10 : 1,
-                          position: 'relative'
-                        }}
-                      >
-                        {displayType || "-"}
-                      </td>
-                    )
+                      <th key={i} style={{ backgroundColor: day === 0 ? '#ffcdd2' : day === 6 ? '#bbdefb' : 'inherit' }}>
+                        {dayNames[day]}
+                      </th>
+                    );
                   })}
                 </tr>
-              )
-            })}
-            
-            {/* 💡【修正】下の検品行が表全体に綺麗にまたがるように colSpan を 3 から 4 に変更 */}
-            <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold', borderTop: '2px solid #333' }}>
-              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px' }}>① 7-9時 (要2)</td>
-              {[...Array(daysInMonth)].map((_, i) => {
-                const count = getCoverage(i).t7_9;
-                return <td key={i} style={{ textAlign: 'center', color: count < 2 ? 'red' : 'inherit' }}>{count}</td>
-              })}
-            </tr>
-            <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
-              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px' }}>② 10-16時 (要3)</td>
-              {[...Array(daysInMonth)].map((_, i) => {
-                const count = getCoverage(i).t10_16;
-                return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
-              })}
-            </tr>
-            <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
-              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px' }}>③ 17-18時 (要3)</td>
-              {[...Array(daysInMonth)].map((_, i) => {
-                const count = getCoverage(i).t17_18;
-                return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
-              })}
-            </tr>
-            <tr className="no-print" style={{ backgroundColor: '#fff5f5', fontWeight: 'bold' }}>
-              <td colSpan="4" style={{ textAlign: 'right', paddingRight: '10px', color: '#c62828' }}>④ キッチン不在</td>
-              {[...Array(daysInMonth)].map((_, i) => {
-                const ok = getCoverage(i).kitchenOk;
-                return <td key={i} style={{ textAlign: 'center', backgroundColor: ok ? 'transparent' : '#ffcdd2' }}>{ok ? '' : '⚠️'}</td>
-              })}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {groupStaffs.map((staff, localIndex) => {
+                  const currentStaffShifts = shifts.filter(shift => {
+                    const targetMonthStr = `-${String(currentMonth).padStart(2, '0')}-`;
+                    return shift.staff_id === staff.id && shift.date.includes(targetMonthStr);
+                  });
+
+                  // キーボード移動のために、全体配列の中での本来のインデックスを探す
+                  const originalIndex = allStaffs.findIndex(s => s.id === staff.id);
+                  
+                  return (
+                    <tr key={staff.id}>
+                      {/* 左端の区分枠は、各テーブルの先頭の人にだけ描画し、集計行（+4）まで縦に伸ばす */}
+                      {localIndex === 0 && (
+                        <td rowSpan={groupStaffs.length + 4} style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '3px solid #333', backgroundColor: '#fff' }}>
+                          （{groupName}）
+                        </td>
+                      )}
+                      <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? '管理者' : '介護従事者'}</td>
+                      <td style={{ textAlign: 'center' }}>{staff.name === '栗原' ? 'B' : 'C'}</td>
+                      <td style={{ padding: '4px', fontWeight: 'bold', backgroundColor: '#fff' }}>{staff.name} {staff.can_kitchen && '🍳'}</td>
+                      
+                      {[...Array(daysInMonth)].map((_, dayIndex) => {
+                        const dayStr = `${displayYear}-${String(currentMonth).padStart(2, '0')}-${String(dayIndex + 1).padStart(2, '0')}`;
+                        const shift = currentStaffShifts.find(sh => sh.date === dayStr);
+                        const isFocused = focusedStaffIndex === originalIndex && focusedDayIndex === dayIndex;
+                        const displayType = shift ? shift.shift_type : "";
+                        
+                        return (
+                          <td 
+                            key={`${staff.id}-${dayIndex}`}
+                            onClick={() => handleCellClick(originalIndex, dayIndex)}
+                            style={{ 
+                              padding: '8px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none',
+                              backgroundColor: SHIFT_INFO[displayType || ""].color,
+                              fontWeight: displayType ? 'bold' : 'normal',
+                              outline: isFocused ? '2px solid #2196F3' : 'none',
+                              zIndex: isFocused ? 10 : 1,
+                              position: 'relative'
+                            }}
+                          >
+                            {displayType || "-"}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+                
+                {/* 💡 各テーブルの下に、そのグループ専用の集計結果を描画する */}
+                <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold', borderTop: '2px solid #333' }}>
+                  <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>① 7-9時 (要2)</td>
+                  {[...Array(daysInMonth)].map((_, i) => {
+                    const count = getCoverage(i, groupName).t7_9;
+                    return <td key={i} style={{ textAlign: 'center', color: count < 2 ? 'red' : 'inherit' }}>{count}</td>
+                  })}
+                </tr>
+                <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
+                  <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>② 10-16時 (要3)</td>
+                  {[...Array(daysInMonth)].map((_, i) => {
+                    const count = getCoverage(i, groupName).t10_16;
+                    return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
+                  })}
+                </tr>
+                <tr className="no-print" style={{ backgroundColor: '#f5f5f5', fontWeight: 'bold' }}>
+                  <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px' }}>③ 17-18時 (要3)</td>
+                  {[...Array(daysInMonth)].map((_, i) => {
+                    const count = getCoverage(i, groupName).t17_18;
+                    return <td key={i} style={{ textAlign: 'center', color: count < 3 ? 'red' : 'inherit' }}>{count}</td>
+                  })}
+                </tr>
+                <tr className="no-print" style={{ backgroundColor: '#fff5f5', fontWeight: 'bold' }}>
+                  <td colSpan="3" style={{ textAlign: 'right', paddingRight: '10px', color: '#c62828' }}>④ キッチン不在</td>
+                  {[...Array(daysInMonth)].map((_, i) => {
+                    const ok = getCoverage(i, groupName).kitchenOk;
+                    return <td key={i} style={{ textAlign: 'center', backgroundColor: ok ? 'transparent' : '#ffcdd2' }}>{ok ? '' : '⚠️'}</td>
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
 
       <div className="no-print" style={{ display: 'flex', gap: '15px' }}>
         <div style={{ flex: 1, backgroundColor: 'white', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
